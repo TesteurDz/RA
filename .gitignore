@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.env
+ra.db
+*.sqlite
+.vite/
+uploads/*
+!uploads/.gitkeep
+venv/
+.idea/
+.vscode/
+*.log
