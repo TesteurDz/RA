@@ -10,12 +10,15 @@ class ApiService {
 
   static const Duration _timeout = Duration(seconds: 60);
 
+  // URL du backend RA sur le VPS
+  static const String _vpsBaseUrl = 'http://187.124.37.159:8001';
+
   String get baseUrl {
-    // Android emulator utilise 10.0.2.2 pour acceder au localhost de la machine
+    // En dev Android emulator: 10.0.2.2, sinon VPS
     if (!kIsWeb && Platform.isAndroid) {
-      return 'http://10.0.2.2:8000';
+      return _vpsBaseUrl;
     }
-    return 'http://localhost:8000';
+    return _vpsBaseUrl;
   }
 
   Map<String, String> get _headers => {
@@ -63,11 +66,11 @@ class ApiService {
     final response = await http.get(uri, headers: _headers).timeout(_timeout);
     final data = _handleResponse(response);
 
-    if (data['items'] is List) {
-      return List<Map<String, dynamic>>.from(data['items']);
-    }
-    if (data.containsKey('data') && data['data'] is List) {
-      return List<Map<String, dynamic>>.from(data['data']);
+    // Backend peut retourner {influencers: []}, {items: []}, ou {data: []}
+    for (final key in ['influencers', 'items', 'data']) {
+      if (data[key] is List) {
+        return List<Map<String, dynamic>>.from(data[key]);
+      }
     }
     // Si la reponse est directement une liste
     final decoded = jsonDecode(response.body);
@@ -94,14 +97,20 @@ class ApiService {
       if (decoded is List) {
         return List<Map<String, dynamic>>.from(decoded);
       }
-      if (decoded is Map && decoded.containsKey('items')) {
-        return List<Map<String, dynamic>>.from(decoded['items']);
+      if (decoded is Map) {
+        // Backend peut retourner {recent: []}, {items: []}, ou {data: []}
+        for (final key in ['recent', 'items', 'data']) {
+          if (decoded.containsKey(key) && decoded[key] is List) {
+            return List<Map<String, dynamic>>.from(decoded[key]);
+          }
+        }
       }
+      return [];
     }
 
     throw ApiException(
       statusCode: response.statusCode,
-      message: decoded['detail'] ?? 'Erreur inconnue',
+      message: decoded is Map ? (decoded['detail'] ?? 'Erreur inconnue') : 'Erreur inconnue',
     );
   }
 

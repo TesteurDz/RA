@@ -185,10 +185,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ─── STATS GRID ──────────────────────────────────────────────
   Widget _buildStatsGrid() {
-    final total = _stats?['total'] ?? _stats?['total_analyses'] ?? 0;
-    final avgScore = (_stats?['avg_score'] ?? _stats?['average_score'] ?? 0).toDouble();
-    final avgEngagement = (_stats?['avg_engagement'] ?? _stats?['average_engagement'] ?? 0).toDouble();
-    final avgFake = (_stats?['avg_fake_followers'] ?? _stats?['average_fake'] ?? 0).toDouble();
+    final total = _stats?['total'] ?? _stats?['total_analyses'] ?? _stats?['total_analyzed'] ?? 0;
+    final avgScore = (_stats?['avg_score'] ?? _stats?['average_score'] ?? _stats?['avg_overall_score'] ?? 0).toDouble();
+    final avgEngagement = (_stats?['avg_engagement'] ?? _stats?['average_engagement'] ?? _stats?['avg_engagement_rate'] ?? 0).toDouble();
+    final avgFake = (_stats?['avg_fake_followers'] ?? _stats?['average_fake'] ?? _stats?['avg_fake_followers_pct'] ?? 0).toDouble();
 
     return Column(
       children: [
