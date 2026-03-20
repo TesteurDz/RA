@@ -21,6 +21,7 @@ from app.models.influencer import (
     Snapshot,
 )
 from app.services.analyzer import AnalyzerService
+from app.services.fake_detector import FakeFollowerDetector
 from app.services.instagram_scraper import InstagramScraper
 from app.services.ocr_service import OCRService
 from app.services.tiktok_scraper import TikTokScraper
@@ -53,6 +54,7 @@ if os.path.exists(_session_path):
         import logging
         logging.getLogger(__name__).warning(f"Instagram session login failed: {_e}")
 analyzer = AnalyzerService()
+fake_detector = FakeFollowerDetector()
 ocr_service = OCRService()
 
 
@@ -82,15 +84,37 @@ async def analyze_influencer(
                 )
             except asyncio.TimeoutError:
                 raise HTTPException(status_code=504, detail="Le scraping a pris trop de temps. Réessayez ou utilisez un screenshot.")
-            fake_pct = instagram_scraper.detect_fake_followers(
-                {**profile_data, "engagement_rate": engagement_data.get("engagement_rate", 0)}
+            fake_report = fake_detector.detect(
+                followers=profile_data.get("followers_count", 0),
+                following=profile_data.get("following_count", 0),
+                posts_count=profile_data.get("posts_count", 0),
+                engagement_rate=engagement_data.get("engagement_rate", 0),
+                platform="instagram",
+                consistency=engagement_data.get("consistency"),
+                comment_like_ratio=engagement_data.get("comment_like_ratio"),
+                er_by_views=engagement_data.get("er_by_views"),
+                er_by_followers=engagement_data.get("er_by_followers"),
+                views_followers_ratio=engagement_data.get("views_followers_ratio"),
+                is_verified=profile_data.get("is_verified", False),
             )
+            fake_pct = fake_report.fake_pct
         else:
             profile_data = await tiktok_scraper.scrape_profile(username)
             engagement_data = await tiktok_scraper.analyze_engagement(username)
-            fake_pct = tiktok_scraper.detect_fake_followers(
-                {**profile_data, "engagement_rate": engagement_data.get("engagement_rate", 0)}
+            fake_report = fake_detector.detect(
+                followers=profile_data.get("followers_count", 0),
+                following=profile_data.get("following_count", 0),
+                posts_count=profile_data.get("posts_count", 0),
+                engagement_rate=engagement_data.get("engagement_rate", 0),
+                platform="tiktok",
+                consistency=engagement_data.get("consistency"),
+                comment_like_ratio=engagement_data.get("comment_like_ratio"),
+                er_by_views=engagement_data.get("er_by_views"),
+                er_by_followers=engagement_data.get("er_by_followers"),
+                views_followers_ratio=engagement_data.get("views_followers_ratio"),
+                is_verified=profile_data.get("is_verified", False),
             )
+            fake_pct = fake_report.fake_pct
 
         # Detect zone
         zone = analyzer.detect_zone_operation(
