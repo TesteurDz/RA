@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import instaloader
+from app.services.engagement_calculator import EngagementCalculator, build_posts_from_instagrapi, PostMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class InstagramScraper:
         }
 
     def _engagement_with_instagrapi(self, username: str, post_count: int = 6) -> dict:
-        """Get engagement using instagrapi (individual post stats)."""
+        """Get engagement using instagrapi + new EngagementCalculator."""
         user_info = self._ig_client.user_info_by_username(username)
 
         if user_info.is_private:
@@ -95,22 +96,28 @@ class InstagramScraper:
                 "engagement_rate": 0.0, "posts_analyzed": 0,
             }
 
+        posts = build_posts_from_instagrapi(medias)
+        calc = EngagementCalculator()
+        report = calc.calculate(posts, user_info.follower_count or 1, "instagram")
+
         total_likes = sum(m.like_count for m in medias)
         total_comments = sum(m.comment_count for m in medias)
         total_views = sum((m.view_count or 0) for m in medias)
         analyzed = len(medias)
 
-        avg_likes = total_likes / analyzed
-        avg_comments = total_comments / analyzed
-        followers = user_info.follower_count or 1
-        engagement_rate = ((avg_likes + avg_comments) / followers) * 100
-
         return {
-            "avg_likes": round(avg_likes, 1),
-            "avg_comments": round(avg_comments, 1),
+            "avg_likes": round(total_likes / analyzed, 1),
+            "avg_comments": round(total_comments / analyzed, 1),
             "avg_views": round(total_views / analyzed, 1) if total_views else 0,
-            "engagement_rate": round(engagement_rate, 2),
-            "posts_analyzed": analyzed,
+            "engagement_rate": report.er_global,
+            "er_method": report.er_method,
+            "er_by_views": report.er_by_views,
+            "er_by_followers": report.er_by_followers,
+            "consistency": report.consistency,
+            "comment_like_ratio": report.comment_like_ratio,
+            "views_followers_ratio": report.views_followers_ratio,
+            "method_confidence": report.method_confidence,
+            "posts_analyzed": report.posts_analyzed,
         }
 
     def _scrape_with_instaloader(self, username: str) -> dict:

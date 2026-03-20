@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from app.services.engagement_calculator import EngagementCalculator, build_posts_from_tiktok, PostMetrics
 
 try:
     from app.core.proxy import PROXY_URL
@@ -197,21 +198,29 @@ class TikTokScraper:
             return await self._fallback_engagement(username)
 
     async def _fallback_engagement(self, username: str) -> dict:
-        """Fallback engagement calculation using profile data only."""
+        """Fallback engagement using profile data + EngagementCalculator."""
         try:
             profile = await self._fallback_scrape(username)
             followers = profile.get("followers_count", 0)
             total_likes = profile.get("total_likes", 0)
-            posts = profile.get("posts_count", 0)
-            avg_likes = total_likes / max(posts, 1)
-            engagement_rate = (avg_likes / max(followers, 1)) * 100 if followers > 0 else 0
+            posts_count = profile.get("posts_count", 0)
+
+            posts = build_posts_from_tiktok(profile)
+            calc = EngagementCalculator()
+            report = calc.calculate(posts, max(followers, 1), "tiktok")
+
+            avg_likes = total_likes / max(posts_count, 1)
+
             return {
                 "avg_likes": round(avg_likes, 1),
                 "avg_comments": 0,
                 "avg_shares": 0,
-                "engagement_rate": round(engagement_rate, 2),
+                "engagement_rate": report.er_global,
+                "er_method": report.er_method,
+                "consistency": report.consistency,
+                "method_confidence": report.method_confidence,
                 "total_likes": total_likes,
-                "posts_analyzed": 0,
+                "posts_analyzed": report.posts_analyzed,
             }
         except Exception as e:
             logger.error(f"Fallback engagement failed for {username}: {e}")
