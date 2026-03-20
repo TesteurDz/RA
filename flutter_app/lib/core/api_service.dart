@@ -1,3 +1,4 @@
+import 'package:http_parser/http_parser.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -8,7 +9,7 @@ class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
 
-  static const Duration _timeout = Duration(seconds: 60);
+  static const Duration _timeout = Duration(seconds: 120);
 
   // URL du backend RA sur le VPS
   static const String _vpsBaseUrl = 'http://187.124.37.159:8001';
@@ -50,8 +51,21 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/api/influencers/screenshot');
     final request = http.MultipartRequest('POST', uri);
 
+    final filename = file.path.split('/').last;
+    final ext = filename.split('.').last.toLowerCase();
+    final mimeType = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp',
+    }[ext] ?? 'image/jpeg';
     request.files.add(
-      await http.MultipartFile.fromPath('file', file.path),
+      await http.MultipartFile.fromPath(
+        'file',
+        file.path,
+        filename: filename,
+        contentType: MediaType.parse(mimeType),
+      ),
     );
     request.fields['platform'] = platform;
 
@@ -131,8 +145,12 @@ class ApiService {
       if (decoded is List) {
         return List<Map<String, dynamic>>.from(decoded);
       }
-      if (decoded is Map && decoded.containsKey('items')) {
-        return List<Map<String, dynamic>>.from(decoded['items']);
+      if (decoded is Map) {
+        for (final key in ['recent', 'items', 'data']) {
+          if (decoded.containsKey(key) && decoded[key] is List) {
+            return List<Map<String, dynamic>>.from(decoded[key]);
+          }
+        }
       }
     }
 

@@ -105,7 +105,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     try {
       final result = await ApiService().uploadScreenshot(_screenshotFile!);
       if (mounted) {
-        final id = result['id'];
+        final id = result['influencer_id'] ?? result['id'];
+        if (id == null) { setState(() => _uploadingScreenshot = false); return; }
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -507,7 +508,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   Widget _recentCard(Map<String, dynamic> item) {
-    final score = (item['score'] ?? 0).toDouble();
+    final score = (item['overall_score'] ?? item['score'] ?? 0).toDouble();
     final username = item['username'] ?? '';
     final platform = (item['platform'] ?? '').toString();
 

@@ -338,7 +338,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ─── RECENT CARD ─────────────────────────────────────────────
   Widget _recentCard(Map<String, dynamic> item) {
-    final score = (item['score'] ?? 0).toDouble();
+    final score = (item['overall_score'] ?? item['score'] ?? 0).toDouble();
     final platform = (item['platform'] ?? '').toString();
     final profilePic = item['profile_pic'] as String?;
     final username = (item['username'] ?? '').toString();

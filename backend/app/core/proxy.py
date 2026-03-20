@@ -1,0 +1,6 @@
+# IPRoyal Proxy Config
+PROXY_HOST = "geo.iproyal.com"
+PROXY_PORT = 12321
+PROXY_USER = "Y0pwc0SVtQUJytk4"
+PROXY_PASS = "WeFt0BkMuXJCB8HE"
+PROXY_URL = f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"

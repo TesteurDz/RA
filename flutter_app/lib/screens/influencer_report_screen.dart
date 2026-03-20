@@ -33,7 +33,7 @@ String getScoreLabel(double score) {
 }
 
 String getVerdictTitle(double score) {
-  if (score <= 3) return 'SUSPECT';
+  if (score <= 3) return 'PRÉOCCUPANT';
   if (score <= 5) return 'ATTENTION';
   if (score <= 7) return 'CORRECT';
   return 'FIABLE';
@@ -142,7 +142,7 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
 
   // ── Data getters (null-safe) ─────────────────────────────────
 
-  double get _score => (_data?['score'] as num?)?.toDouble() ?? 0;
+  double get _score => (_data?['latest_snapshot']?['overall_score'] as num?)?.toDouble() ?? (_data?['overall_score'] as num?)?.toDouble() ?? (_data?['score'] as num?)?.toDouble() ?? 0;
 
   String get _name =>
       _data?['full_name'] as String? ??
@@ -162,26 +162,26 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
   bool get _verified =>
       _data?['is_verified'] as bool? ?? _data?['verified'] as bool? ?? false;
 
-  num get _followers => _data?['followers'] as num? ?? 0;
-  num get _following => _data?['following'] as num? ?? 0;
+  num get _followers => _data?['followers_count'] as num? ?? _data?['followers'] as num? ?? 0;
+  num get _following => _data?['following_count'] as num? ?? _data?['following'] as num? ?? 0;
 
   num get _posts =>
+      _data?['posts_count'] as num? ??
       _data?['posts'] as num? ??
       _data?['media_count'] as num? ??
-      _data?['publications'] as num? ??
       0;
 
   double get _engagementRate =>
-      (_data?['engagement_rate'] as num?)?.toDouble() ?? 0;
+      (_data?['latest_snapshot']?['engagement_rate'] as num?)?.toDouble() ?? (_data?['engagement_rate'] as num?)?.toDouble() ?? 0;
 
   double get _fakePct =>
-      (_data?['fake_followers_pct'] as num?)?.toDouble() ?? 0;
+      (_data?['latest_snapshot']?['fake_followers_pct'] as num?)?.toDouble() ?? (_data?['fake_followers_pct'] as num?)?.toDouble() ?? 0;
 
   String get _zone =>
-      _data?['zone'] as String? ?? _data?['location'] as String? ?? 'Algérie';
+      _data?['zone_operation'] as String? ?? _data?['zone'] as String? ?? _data?['location'] as String? ?? 'Algérie';
 
   Map<String, dynamic>? get _demographics =>
-      _data?['demographics'] as Map<String, dynamic>?;
+      _data?['latest_snapshot']?['audience_demographic'] as Map<String, dynamic>? ?? _data?['demographics'] as Map<String, dynamic>?;
 
   // ── Build ────────────────────────────────────────────────────
 
@@ -803,15 +803,18 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
     if (demo != null) {
       for (final key in demo.keys) {
         if (key.startsWith('age_')) {
-          final label = key.replaceFirst('age_', '').replaceAll('_', '-');
+          final rawLabel = key.replaceFirst('age_', '').replaceAll('_pct', '').replaceAll('_', '-').replaceAll('plus', '+');
+          final label = '$rawLabel ans';
           ageData[label] = (demo[key] as num?)?.toDouble() ?? 0;
         }
       }
     }
 
-    final male = (demo?['male'] as num?)?.toDouble() ??
+    final male = (demo?['estimated_male_pct'] as num?)?.toDouble() ??
+        (demo?['male'] as num?)?.toDouble() ??
         (demo?['gender_male'] as num?)?.toDouble();
-    final female = (demo?['female'] as num?)?.toDouble() ??
+    final female = (demo?['estimated_female_pct'] as num?)?.toDouble() ??
+        (demo?['female'] as num?)?.toDouble() ??
         (demo?['gender_female'] as num?)?.toDouble();
 
     final countries = demo?['top_countries'] as List<dynamic>?;
@@ -884,7 +887,7 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
               runSpacing: 6,
               children: countries.take(5).map((c) {
                 final name =
-                    c is Map ? (c['name'] ?? c.toString()) : c.toString();
+                    c is Map ? (c['country'] ?? c['name'] ?? c.toString()) : c.toString();
                 return _chipTag(Icons.flag_outlined, name.toString());
               }).toList(),
             ),
@@ -906,7 +909,7 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
               runSpacing: 6,
               children: cities.take(5).map((c) {
                 final name =
-                    c is Map ? (c['name'] ?? c.toString()) : c.toString();
+                    c is Map ? (c['country'] ?? c['name'] ?? c.toString()) : c.toString();
                 return _chipTag(
                     Icons.location_city_outlined, name.toString());
               }).toList(),
@@ -1112,7 +1115,7 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
   Widget _buildVerdictCard() {
     final color = getScoreColor(_score);
     final title = getVerdictTitle(_score);
-    final verdict = getVerdict(_data ?? {});
+    final verdict = getVerdict({...?_data, "score": _score, "engagement_rate": _engagementRate, "fake_followers_pct": _fakePct, "username": _username});
 
     return Container(
       decoration: BoxDecoration(

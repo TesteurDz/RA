@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -28,6 +29,29 @@ router = APIRouter(prefix="/api/influencers", tags=["influencers"])
 
 instagram_scraper = InstagramScraper()
 tiktok_scraper = TikTokScraper()
+
+# Auto-login Instagram via saved session or credentials
+import os
+_session_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ig_session.json")
+if os.path.exists(_session_path):
+    try:
+        from instagrapi import Client as _IgClient
+        _cl = _IgClient()
+        try:
+            from app.core.proxy import PROXY_URL
+            if PROXY_URL:
+                _cl.set_proxy(PROXY_URL)
+        except ImportError:
+            pass
+        _cl.load_settings(_session_path)
+        _cl.login("bapk2026", "bapk2026@")
+        instagram_scraper._ig_client = _cl
+        instagram_scraper._ig_logged_in = True
+        import logging
+        logging.getLogger(__name__).info("Instagram: logged in via saved session")
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning(f"Instagram session login failed: {_e}")
 analyzer = AnalyzerService()
 ocr_service = OCRService()
 
@@ -49,8 +73,15 @@ async def analyze_influencer(
     try:
         # Scrape profile
         if platform == "instagram":
-            profile_data = await instagram_scraper.scrape_profile(username)
-            engagement_data = await instagram_scraper.analyze_engagement(username)
+            try:
+                profile_data = await asyncio.wait_for(
+                    instagram_scraper.scrape_profile(username), timeout=30
+                )
+                engagement_data = await asyncio.wait_for(
+                    instagram_scraper.analyze_engagement(username), timeout=45
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=504, detail="Le scraping a pris trop de temps. Réessayez ou utilisez un screenshot.")
             fake_pct = instagram_scraper.detect_fake_followers(
                 {**profile_data, "engagement_rate": engagement_data.get("engagement_rate", 0)}
             )
@@ -65,6 +96,8 @@ async def analyze_influencer(
         zone = analyzer.detect_zone_operation(
             bio=profile_data.get("bio", ""),
             location="",
+            followers_count=profile_data.get("followers_count", profile_data.get("followers", 0)),
+            is_verified=profile_data.get("is_verified", profile_data.get("verified", False)),
         )
 
         # Calculate scores
@@ -74,6 +107,7 @@ async def analyze_influencer(
             engagement_rate=engagement_rate,
             fake_pct=fake_pct,
             comment_quality=comment_quality,
+            followers_count=profile_data.get("followers_count", 0),
         )
 
         # Demographics
@@ -198,8 +232,13 @@ async def analyze_screenshot(
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Upload a screenshot for OCR-based analysis."""
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
+    # Accept common image types by extension or content_type
+    allowed_ext = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif")
+    fname = (file.filename or "").lower()
+    is_image_ext = any(fname.endswith(e) for e in allowed_ext)
+    is_image_ct = file.content_type and file.content_type.startswith("image/")
+    if not is_image_ext and not is_image_ct:
+        raise HTTPException(status_code=400, detail="File must be an image (jpg, png, webp)")
 
     # Save the uploaded file
     ext = os.path.splitext(file.filename or "upload.png")[1] or ".png"

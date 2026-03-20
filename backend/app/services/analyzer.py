@@ -268,6 +268,7 @@ class AnalyzerService:
         fake_pct: float,
         comment_quality: float,
         growth_pattern: float = 5.0,
+        followers_count: int = 0,
     ) -> float:
         """
         Calculate overall influencer score from 0 to 10.
@@ -278,8 +279,19 @@ class AnalyzerService:
         - Comment quality: 20%
         - Growth pattern: 20%
         """
-        # Normalize engagement rate (0-10 scale, cap at 10% ER)
-        engagement_score = min(engagement_rate / 10.0 * 10.0, 10.0)
+        # Scale engagement expectation by follower tier
+        if followers_count > 10_000_000:
+            # Mega: 0.5-2% is excellent
+            engagement_score = min(engagement_rate / 2.0 * 10.0, 10.0)
+        elif followers_count > 1_000_000:
+            # Macro: 1-3% is good
+            engagement_score = min(engagement_rate / 3.0 * 10.0, 10.0)
+        elif followers_count > 100_000:
+            # Mid: 2-5% is good
+            engagement_score = min(engagement_rate / 5.0 * 10.0, 10.0)
+        else:
+            # Micro/nano: up to 10%
+            engagement_score = min(engagement_rate / 10.0 * 10.0, 10.0)
 
         # Invert fake percentage (lower is better)
         authenticity_score = max(10.0 - (fake_pct / 10.0), 0.0)
@@ -300,8 +312,11 @@ class AnalyzerService:
         return round(min(max(overall, 0.0), 10.0), 1)
 
     @staticmethod
-    def detect_zone_operation(bio: str = "", location: str = "", hashtags: list = None) -> str:
+    def detect_zone_operation(bio: str = "", location: str = "", hashtags: list = None, followers_count: int = 0, is_verified: bool = False) -> str:
         """Try to detect Algerian wilaya from bio, location, or hashtags."""
+        # Skip zone detection for verified international profiles
+        if is_verified and followers_count > 1_000_000:
+            return None
         hashtags = hashtags or []
         search_text = f"{bio} {location} {' '.join(hashtags)}".lower()
 
