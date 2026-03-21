@@ -89,11 +89,19 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
+<<<<<<< HEAD
             VALUE "CompanyName", "com.energysfood" "\0"
             VALUE "FileDescription", "ra_app" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "ra_app" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.energysfood. All rights reserved." "\0"
+=======
+            VALUE "CompanyName", "com.ra" "\0"
+            VALUE "FileDescription", "ra_app" "\0"
+            VALUE "FileVersion", VERSION_AS_STRING "\0"
+            VALUE "InternalName", "ra_app" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.ra. All rights reserved." "\0"
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
             VALUE "OriginalFilename", "ra_app.exe" "\0"
             VALUE "ProductName", "ra_app" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

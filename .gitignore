@@ -13,3 +13,5 @@ venv/
 .idea/
 .vscode/
 *.log
+backend/app.bak.local/
+flutter_app/lib.bak.local/

@@ -15,7 +15,12 @@ struct _MyApplication {
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
+<<<<<<< HEAD
 static void first_frame_cb(MyApplication* self, FlView* view) {
+=======
+static void first_frame_cb(MyApplication* self, FlView *view)
+{
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
@@ -55,6 +60,7 @@ static void my_application_activate(GApplication* application) {
   gtk_window_set_default_size(window, 1280, 720);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
+<<<<<<< HEAD
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
@@ -62,6 +68,13 @@ static void my_application_activate(GApplication* application) {
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000
   // for transparent.
+=======
+  fl_dart_project_set_dart_entrypoint_arguments(project, self->dart_entrypoint_arguments);
+
+  FlView* view = fl_view_new(project);
+  GdkRGBA background_color;
+  // Background defaults to black, override it here if necessary, e.g. #00000000 for transparent.
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
   gdk_rgba_parse(&background_color, "#000000");
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
@@ -69,8 +82,12 @@ static void my_application_activate(GApplication* application) {
 
   // Show the window when Flutter renders.
   // Requires the view to be realized so we can start rendering.
+<<<<<<< HEAD
   g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb),
                            self);
+=======
+  g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb), self);
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
@@ -79,18 +96,28 @@ static void my_application_activate(GApplication* application) {
 }
 
 // Implements GApplication::local_command_line.
+<<<<<<< HEAD
 static gboolean my_application_local_command_line(GApplication* application,
                                                   gchar*** arguments,
                                                   int* exit_status) {
+=======
+static gboolean my_application_local_command_line(GApplication* application, gchar*** arguments, int* exit_status) {
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
   MyApplication* self = MY_APPLICATION(application);
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
+<<<<<<< HEAD
     g_warning("Failed to register: %s", error->message);
     *exit_status = 1;
     return TRUE;
+=======
+     g_warning("Failed to register: %s", error->message);
+     *exit_status = 1;
+     return TRUE;
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
   }
 
   g_application_activate(application);
@@ -101,7 +128,11 @@ static gboolean my_application_local_command_line(GApplication* application,
 
 // Implements GApplication::startup.
 static void my_application_startup(GApplication* application) {
+<<<<<<< HEAD
   // MyApplication* self = MY_APPLICATION(object);
+=======
+  //MyApplication* self = MY_APPLICATION(object);
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
 
   // Perform any actions required at application startup.
 
@@ -110,7 +141,11 @@ static void my_application_startup(GApplication* application) {
 
 // Implements GApplication::shutdown.
 static void my_application_shutdown(GApplication* application) {
+<<<<<<< HEAD
   // MyApplication* self = MY_APPLICATION(object);
+=======
+  //MyApplication* self = MY_APPLICATION(object);
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
 
   // Perform any actions required at application shutdown.
 
@@ -126,8 +161,12 @@ static void my_application_dispose(GObject* object) {
 
 static void my_application_class_init(MyApplicationClass* klass) {
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
+<<<<<<< HEAD
   G_APPLICATION_CLASS(klass)->local_command_line =
       my_application_local_command_line;
+=======
+  G_APPLICATION_CLASS(klass)->local_command_line = my_application_local_command_line;
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
   G_APPLICATION_CLASS(klass)->startup = my_application_startup;
   G_APPLICATION_CLASS(klass)->shutdown = my_application_shutdown;
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
@@ -143,6 +182,12 @@ MyApplication* my_application_new() {
   g_set_prgname(APPLICATION_ID);
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
+<<<<<<< HEAD
                                      "application-id", APPLICATION_ID, "flags",
                                      G_APPLICATION_NON_UNIQUE, nullptr));
+=======
+                                     "application-id", APPLICATION_ID,
+                                     "flags", G_APPLICATION_NON_UNIQUE,
+                                     nullptr));
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
 }

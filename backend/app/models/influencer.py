@@ -52,6 +52,12 @@ class Snapshot(Base):
     engagement_rate = Column(Float, default=0.0)
     fake_followers_pct = Column(Float, default=0.0)
     overall_score = Column(Float, default=0.0)
+    # v5 — scores séparés
+    social_score = Column(Float, nullable=True)
+    business_score = Column(Float, nullable=True)
+    conversion_score = Column(Float, nullable=True)
+    buyer_intent_score = Column(Float, nullable=True)
+    confidence_score = Column(Float, nullable=True)
     captured_at = Column(DateTime, default=datetime.utcnow)
 
     influencer = relationship("Influencer", back_populates="snapshots")

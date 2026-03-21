@@ -8,7 +8,14 @@
 PRODUCT_NAME = ra_app
 
 // The application's bundle identifier
+<<<<<<< HEAD
 PRODUCT_BUNDLE_IDENTIFIER = com.energysfood.raApp
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.energysfood. All rights reserved.
+=======
+PRODUCT_BUNDLE_IDENTIFIER = com.ra.raApp
+
+// The copyright displayed in application information
+PRODUCT_COPYRIGHT = Copyright © 2026 com.ra. All rights reserved.
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)

@@ -3,10 +3,14 @@
 
 #include <gtk/gtk.h>
 
+<<<<<<< HEAD
 G_DECLARE_FINAL_TYPE(MyApplication,
                      my_application,
                      MY,
                      APPLICATION,
+=======
+G_DECLARE_FINAL_TYPE(MyApplication, my_application, MY, APPLICATION,
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
                      GtkApplication)
 
 /**

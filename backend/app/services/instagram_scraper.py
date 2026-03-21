@@ -2,47 +2,127 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import time
 
 try:
-    from app.core.proxy import PROXY_URL
+    from app.core.proxy import PROXY_URL, get_rotating_proxy
 except ImportError:
     PROXY_URL = None
+    def get_rotating_proxy(): return None
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-import instaloader
+import json
+import os
+
 from app.services.engagement_calculator import EngagementCalculator, build_posts_from_instagrapi, PostMetrics
 
 logger = logging.getLogger(__name__)
 
+SESSION_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ig_session.json")
+
 _executor = ThreadPoolExecutor(max_workers=2)
 
-# Try to use instagrapi first, fallback to instaloader
 try:
     from instagrapi import Client as InstaClient
     HAS_INSTAGRAPI = True
 except ImportError:
     HAS_INSTAGRAPI = False
 
+try:
+    import instaloader
+    HAS_INSTALOADER = True
+except ImportError:
+    HAS_INSTALOADER = False
+
 
 class InstagramScraper:
     def __init__(self):
         # Instaloader (fallback)
-        self.loader = instaloader.Instaloader(
-            download_pictures=False,
-            download_videos=False,
-            download_video_thumbnails=False,
-            download_geotags=False,
-            download_comments=False,
-            save_metadata=False,
-            compress_json=False,
-        )
+        if HAS_INSTALOADER:
+            self.loader = instaloader.Instaloader(
+                download_pictures=False,
+                download_videos=False,
+                download_video_thumbnails=False,
+                download_geotags=False,
+                download_comments=False,
+                save_metadata=False,
+                compress_json=False,
+            )
+        else:
+            self.loader = None
         # Instagrapi client (primary if logged in)
         self._ig_client = None
         self._ig_logged_in = False
+        self._last_request_time = 0
+
+    _daily_count = 0
+    _daily_reset = 0
+
+    def _rate_limit_delay(self):
+        """Human-like delay between requests to avoid detection."""
+        import datetime
+        now = time.time()
+        # Reset daily counter
+        today = datetime.date.today().toordinal()
+        if self._daily_reset != today:
+            InstagramScraper._daily_count = 0
+            InstagramScraper._daily_reset = today
+
+        elapsed = now - self._last_request_time
+        # Random delay 5-10s (balanced speed/safety)
+        min_delay = 5.0
+        max_delay = 10.0
+        if elapsed < min_delay:
+            delay = random.uniform(min_delay - elapsed, max_delay - elapsed)
+            logger.info(f"Rate limit delay: {delay:.1f}s")
+            time.sleep(delay)
+        self._last_request_time = time.time()
+        InstagramScraper._daily_count += 1
+
+    def _rotate_proxy(self):
+        """Set static proxy (rotation via IPRoyal auto-rotate)."""
+        if self._ig_client and PROXY_URL:
+            try:
+                self._ig_client.set_proxy(PROXY_URL)
+            except Exception:
+                pass
+
+    def load_session(self, session_path: str = None) -> bool:
+        """Load a saved instagrapi session from JSON file."""
+        if not HAS_INSTAGRAPI:
+            logger.warning("instagrapi not installed")
+            return False
+        path = session_path or SESSION_FILE
+        if not os.path.exists(path):
+            logger.warning(f"Session file not found: {path}")
+            return False
+        try:
+            self._ig_client = InstaClient()
+            # Don't set proxy at session load — set it per request
+            logger.info("Loading session without proxy (proxy set per-request)")
+
+            # Load settings
+            with open(path, "r") as f:
+                settings_data = json.load(f)
+            self._ig_client.set_settings(settings_data)
+
+            # Don't validate with get_timeline_feed — it flags accounts
+            # Just trust the session and let it fail on first real request if invalid
+            self._ig_logged_in = True
+            logger.info("Instagram session loaded (no validation to avoid detection)")
+            return True
+
+            self._ig_logged_in = False
+            return False
+        except Exception as e:
+            logger.error(f"Session load failed: {e}")
+            self._ig_logged_in = False
+            return False
 
     def login_instagrapi(self, username: str, password: str) -> bool:
-        """Login to Instagram via instagrapi for better access."""
+        """Login to Instagram via instagrapi."""
         if not HAS_INSTAGRAPI:
             logger.warning("instagrapi not installed")
             return False
@@ -53,6 +133,7 @@ class InstagramScraper:
             self._ig_client.login(username, password)
             self._ig_logged_in = True
             logger.info(f"Logged in to Instagram as {username}")
+            self._ig_client.dump_settings(SESSION_FILE)
             return True
         except Exception as e:
             logger.error(f"Instagram login failed: {e}")
@@ -60,8 +141,29 @@ class InstagramScraper:
             return False
 
     def _scrape_with_instagrapi(self, username: str) -> dict:
-        """Scrape using instagrapi (logged in, more reliable)."""
-        user_info = self._ig_client.user_info_by_username(username)
+        """Scrape using instagrapi PRIVATE API (v1) to avoid 429 on public endpoints."""
+        self._rate_limit_delay()
+
+        # Try with proxy first, fallback to direct if proxy fails
+        try:
+            self._rotate_proxy()
+            user_info = self._ig_client.user_info_by_username_v1(username)
+        except Exception as e:
+            err = str(e).lower()
+            if "proxy" in err or "407" in err or "tunnel" in err:
+                logger.warning(f"Proxy failed for {username}, trying without proxy: {e}")
+                self._ig_client.set_proxy(None)
+                try:
+                    user_info = self._ig_client.user_info_by_username_v1(username)
+                except Exception as e2:
+                    logger.warning(f"v1 without proxy failed: {e2}, trying default")
+                    user_info = self._ig_client.user_info_by_username(username)
+            else:
+                logger.warning(f"v1 failed for {username}: {e}, trying default method")
+                user_info = self._ig_client.user_info_by_username(username)
+
+        # Cache user_info to avoid redundant API calls
+        self._last_user_info = user_info
         return {
             "username": user_info.username,
             "full_name": user_info.full_name,
@@ -78,8 +180,22 @@ class InstagramScraper:
         }
 
     def _engagement_with_instagrapi(self, username: str, post_count: int = 6) -> dict:
-        """Get engagement using instagrapi + new EngagementCalculator."""
-        user_info = self._ig_client.user_info_by_username(username)
+        """Get engagement using instagrapi PRIVATE API + EngagementCalculator."""
+        self._rate_limit_delay()
+        try:
+            self._rotate_proxy()
+        except Exception:
+            self._ig_client.set_proxy(None)
+
+        # Reuse cached user_info from scrape_profile
+        if hasattr(self, '_last_user_info') and self._last_user_info and self._last_user_info.username == username:
+            user_info = self._last_user_info
+            logger.info(f"Reusing cached user_info for {username}")
+        else:
+            try:
+                user_info = self._ig_client.user_info_by_username_v1(username)
+            except Exception:
+                user_info = self._ig_client.user_info_by_username(username)
 
         if user_info.is_private:
             return {
@@ -88,7 +204,14 @@ class InstagramScraper:
                 "engagement_rate": 0.0, "posts_analyzed": 0,
             }
 
-        medias = self._ig_client.user_medias(user_info.pk, amount=post_count)
+        self._rate_limit_delay()
+
+        # Force v1 medias endpoint (private API)
+        try:
+            medias = self._ig_client.user_medias_v1(user_info.pk, amount=post_count)
+        except Exception as e:
+            logger.warning(f"user_medias_v1 failed: {e}, trying default")
+            medias = self._ig_client.user_medias(user_info.pk, amount=post_count)
 
         if not medias:
             return {
@@ -122,6 +245,8 @@ class InstagramScraper:
 
     def _scrape_with_instaloader(self, username: str) -> dict:
         """Fallback: scrape using instaloader."""
+        if not self.loader:
+            raise RuntimeError("instaloader not available")
         profile = instaloader.Profile.from_username(self.loader.context, username)
         return {
             "username": profile.username,
@@ -139,6 +264,8 @@ class InstagramScraper:
 
     def _engagement_with_instaloader(self, username: str, post_count: int = 6) -> dict:
         """Fallback: engagement using instaloader."""
+        if not self.loader:
+            raise RuntimeError("instaloader not available")
         profile = instaloader.Profile.from_username(self.loader.context, username)
 
         if profile.is_private:
@@ -175,45 +302,45 @@ class InstagramScraper:
         }
 
     async def scrape_profile(self, username: str) -> dict:
-        """Scrape Instagram profile. Uses instagrapi if logged in, else instaloader."""
+        """Scrape Instagram profile. Uses instagrapi private API if logged in."""
         loop = asyncio.get_event_loop()
         try:
             if self._ig_logged_in:
                 return await loop.run_in_executor(
                     _executor, lambda: self._scrape_with_instagrapi(username)
                 )
-            else:
+            elif self.loader:
                 return await loop.run_in_executor(
                     _executor, lambda: self._scrape_with_instaloader(username)
                 )
-        except instaloader.exceptions.ProfileNotExistsException:
-            raise ValueError(f"Profile '{username}' does not exist on Instagram")
-        except instaloader.exceptions.ConnectionException as e:
-            raise ConnectionError(f"Failed to connect to Instagram: {e}")
+            else:
+                raise RuntimeError("No Instagram scraper available (instagrapi not logged in, instaloader not available)")
         except Exception as e:
-            # If instagrapi fails, try instaloader
-            if self._ig_logged_in:
-                logger.warning(f"instagrapi failed, trying instaloader: {e}")
+            # If instagrapi fails, try instaloader as fallback
+            if self._ig_logged_in and self.loader:
+                logger.warning(f"instagrapi failed for {username}: {e}, trying instaloader")
                 try:
                     return await loop.run_in_executor(
                         _executor, lambda: self._scrape_with_instaloader(username)
                     )
                 except Exception as e2:
-                    raise RuntimeError(f"Both scrapers failed: {e2}")
-            raise RuntimeError(f"Error scraping profile: {e}")
+                    raise RuntimeError(f"Both scrapers failed for {username}: instagrapi={e}, instaloader={e2}")
+            raise RuntimeError(f"Error scraping profile {username}: {e}")
 
     async def analyze_engagement(self, username: str, post_count: int = 6) -> dict:
-        """Analyze engagement. Uses instagrapi if logged in, else instaloader."""
+        """Analyze engagement. Uses instagrapi private API if logged in."""
         loop = asyncio.get_event_loop()
         try:
             if self._ig_logged_in:
                 return await loop.run_in_executor(
                     _executor, lambda: self._engagement_with_instagrapi(username, post_count)
                 )
-            else:
+            elif self.loader:
                 return await loop.run_in_executor(
                     _executor, lambda: self._engagement_with_instaloader(username, post_count)
                 )
+            else:
+                return {"avg_likes": 0, "avg_comments": 0, "engagement_rate": 0.0, "posts_analyzed": 0, "error": "No scraper available"}
         except Exception as e:
             logger.error(f"Error analyzing engagement for {username}: {e}")
             return {

@@ -10,6 +10,10 @@ class ApiService {
   factory ApiService() => _instance;
 
   static const Duration _timeout = Duration(seconds: 120);
+<<<<<<< HEAD
+=======
+  static const Duration _batchTimeout = Duration(seconds: 600);
+>>>>>>> 4c4603f (RA v6e — Advanced ROI scoring, OCR Mistral, anti-detection, multi-screenshot)
 
   // URL du backend RA sur le VPS
   static const String _vpsBaseUrl = 'http://187.124.37.159:8001';
@@ -74,7 +78,41 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  /// Recuperer la liste de tous les influenceurs
+
+  /// Uploader plusieurs captures d'ecran pour analyse batch
+  Future<Map<String, dynamic>> uploadMultipleScreenshots(
+    List<File> files, {
+    String platform = 'instagram',
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/influencers/screenshots');
+    final request = http.MultipartRequest('POST', uri);
+
+    for (final file in files) {
+      final filename = file.path.split('/').last;
+      final ext = filename.split('.').last.toLowerCase();
+      final mimeType = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'webp': 'image/webp',
+      }[ext] ?? 'image/jpeg';
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'files',
+          file.path,
+          filename: filename,
+          contentType: MediaType.parse(mimeType),
+        ),
+      );
+    }
+    request.fields['platform'] = platform;
+
+    final streamedResponse = await request.send().timeout(_batchTimeout);
+    final response = await http.Response.fromStream(streamedResponse);
+    return _handleResponse(response);
+  }
+
+    /// Recuperer la liste de tous les influenceurs
   Future<List<Map<String, dynamic>>> getInfluencers() async {
     final uri = Uri.parse('$baseUrl/api/influencers/');
     final response = await http.get(uri, headers: _headers).timeout(_timeout);
@@ -171,6 +209,21 @@ class ApiService {
         )
         .timeout(_timeout);
     return _handleResponse(response);
+  }
+
+  /// Supprimer un snapshot individuel de l'historique
+  Future<void> deleteSnapshot(int snapshotId) async {
+    final uri = Uri.parse('$baseUrl/api/influencers/snapshots/$snapshotId');
+    final response =
+        await http.delete(uri, headers: _headers).timeout(_timeout);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final decoded = jsonDecode(response.body);
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: decoded['detail'] ?? 'Erreur lors de la suppression',
+      );
+    }
   }
 
   /// Supprimer un influenceur

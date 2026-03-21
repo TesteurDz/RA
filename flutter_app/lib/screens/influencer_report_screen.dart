@@ -108,6 +108,8 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
   Map<String, dynamic>? _data;
   bool _loading = true;
   String? _error;
+  List<Map<String, dynamic>> _snapshots = [];
+  bool _snapshotsLoading = false;
 
   // ── Lifecycle ────────────────────────────────────────────────
 
@@ -129,6 +131,7 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
           _data = data;
           _loading = false;
         });
+        _loadSnapshots();
       }
     } catch (e) {
       if (mounted) {
@@ -136,6 +139,74 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
           _error = e.toString();
           _loading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _loadSnapshots() async {
+    setState(() => _snapshotsLoading = true);
+    try {
+      final history = await ApiService().getInfluencerHistory(widget.influencerId);
+      if (mounted) {
+        setState(() {
+          _snapshots = history;
+          _snapshotsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _snapshotsLoading = false);
+    }
+  }
+
+  Future<void> _deleteSnapshot(int snapshotId, int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Supprimer cette analyse ?',
+          style: GoogleFonts.inter(color: AppColors.text, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Cette action est irreversible.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Annuler', style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Supprimer', style: GoogleFonts.inter(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ApiService().deleteSnapshot(snapshotId);
+      if (mounted) {
+        setState(() {
+          _snapshots.removeAt(index);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Analyse supprimee', style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e', style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
     }
   }
@@ -335,6 +406,8 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
           _buildZoneCard(),
           const SizedBox(height: 16),
           _buildVerdictCard(),
+          const SizedBox(height: 16),
+          _buildSnapshotHistory(),
           const SizedBox(height: 24),
           _buildActionButtons(),
           const SizedBox(height: 32),
@@ -1170,6 +1243,171 @@ class _InfluencerReportScreenState extends State<InfluencerReportScreen> {
 
   // ═════════════════════════════════════════════════════════════════════════════
   // G. Action Buttons
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Snapshot History (suppression un par un)
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  Widget _buildSnapshotHistory() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.history_rounded, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Historique des analyses',
+                style: GoogleFonts.inter(
+                  color: AppColors.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_snapshots.length} analyse${_snapshots.length > 1 ? 's' : ''}',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_snapshotsLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (_snapshots.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  'Aucun historique disponible',
+                  style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 13),
+                ),
+              ),
+            )
+          else
+            ...List.generate(_snapshots.length, (i) {
+              final snap = _snapshots[i];
+              final snapId = snap['id'] as int? ?? 0;
+              final date = snap['captured_at'] ?? '';
+              final er = (snap['engagement_rate'] as num?)?.toDouble() ?? 0;
+              final score = (snap['overall_score'] as num?)?.toDouble() ?? 0;
+              final followers = snap['followers_count'] as num? ?? 0;
+              final fakePct = (snap['fake_followers_pct'] as num?)?.toDouble() ?? 0;
+
+              String dateStr = '';
+              try {
+                final d = DateTime.parse(date);
+                dateStr = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+              } catch (_) {}
+
+              return Container(
+                margin: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: i == 0
+                      ? AppColors.primary.withValues(alpha: 0.06)
+                      : AppColors.background,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: i == 0 ? AppColors.primary.withValues(alpha: 0.2) : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // Date + badge "dernier"
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (i == 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'DERNIER',
+                                    style: GoogleFonts.jetBrainsMono(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              Text(
+                                dateStr,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppColors.text,
+                                  fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w400,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              _snapMetric('ER', '${er.toStringAsFixed(1)}%'),
+                              const SizedBox(width: 12),
+                              _snapMetric('Score', score.toStringAsFixed(1)),
+                              const SizedBox(width: 12),
+                              _snapMetric('Fake', '${fakePct.toStringAsFixed(0)}%'),
+                              const SizedBox(width: 12),
+                              _snapMetric('Followers', formatNumber(followers)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Delete button
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      color: AppColors.textSecondary.withValues(alpha: 0.5),
+                      splashRadius: 18,
+                      tooltip: 'Supprimer cette analyse',
+                      onPressed: () => _deleteSnapshot(snapId, i),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _snapMetric(String label, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label ',
+          style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSecondary),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.jetBrainsMono(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.text,
+          ),
+        ),
+      ],
+    );
+  }
+
   // ═════════════════════════════════════════════════════════════════════════════
 
   Widget _buildActionButtons() {

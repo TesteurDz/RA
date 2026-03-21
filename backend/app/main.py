@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI
@@ -8,6 +9,8 @@ from app.api.dashboard import router as dashboard_router
 from app.api.influencers import router as influencers_router
 from app.core.config import settings
 from app.core.database import create_tables
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -29,6 +32,10 @@ static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", 
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static/uploads", StaticFiles(directory=static_dir), name="uploads")
 
+# Serve APK and other static files from /static root
+root_static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+app.mount("/static", StaticFiles(directory=root_static_dir), name="static_root")
+
 # Include routers
 app.include_router(influencers_router)
 app.include_router(dashboard_router)
@@ -37,6 +44,13 @@ app.include_router(dashboard_router)
 @app.on_event("startup")
 async def startup():
     await create_tables()
+
+    # Auto-load Instagram session
+    from app.api.influencers import instagram_scraper
+    if instagram_scraper.load_session():
+        logger.info("Instagram session loaded successfully at startup")
+    else:
+        logger.warning("Instagram session not available - IG analysis will fail")
 
 
 @app.get("/")

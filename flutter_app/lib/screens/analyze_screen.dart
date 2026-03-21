@@ -7,6 +7,12 @@ import '../core/constants.dart';
 import '../core/api_service.dart';
 import 'influencer_report_screen.dart';
 
+String _formatNum(num n) {
+  if (n >= 1000000) return "${(n / 1000000).toStringAsFixed(1)}M";
+  if (n >= 1000) return "${(n / 1000).toStringAsFixed(1)}K";
+  return n.toString();
+}
+
 class AnalyzeScreen extends StatefulWidget {
   const AnalyzeScreen({super.key});
 
@@ -20,8 +26,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   final _usernameController = TextEditingController();
   String _platform = 'instagram';
   bool _analyzing = false;
-  File? _screenshotFile;
+  List<File> _screenshotFiles = [];
   bool _uploadingScreenshot = false;
+  List<Map<String, dynamic>> _screenshotResults = [];
+  String _screenshotProgress = '';
   List<Map<String, dynamic>> _recentAnalyses = [];
   bool _loadingRecent = true;
 
@@ -90,45 +98,69 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
-  Future<void> _pickScreenshot() async {
+  Future<void> _pickScreenshots() async {
     final picker = ImagePicker();
-    final xFile = await picker.pickImage(source: ImageSource.gallery);
-    if (xFile != null && mounted) {
-      setState(() => _screenshotFile = File(xFile.path));
+    final xFiles = await picker.pickMultiImage();
+    if (xFiles.isNotEmpty && mounted) {
+      setState(() {
+        _screenshotFiles.addAll(xFiles.map((x) => File(x.path)));
+        _screenshotResults = [];
+      });
     }
   }
 
-  Future<void> _analyzeScreenshot() async {
-    if (_screenshotFile == null) return;
+  Future<void> _analyzeScreenshots() async {
+    if (_screenshotFiles.isEmpty) return;
 
-    setState(() => _uploadingScreenshot = true);
-    try {
-      final result = await ApiService().uploadScreenshot(_screenshotFile!);
-      if (mounted) {
+    setState(() {
+      _uploadingScreenshot = true;
+      _screenshotResults = [];
+      _screenshotProgress = '';
+    });
+
+    final total = _screenshotFiles.length;
+    final List<Map<String, dynamic>> results = [];
+
+    for (int i = 0; i < total; i++) {
+      if (!mounted) break;
+      setState(() {
+        _screenshotProgress = 'Analyse ${i + 1}/$total...';
+      });
+
+      try {
+        final result = await ApiService().uploadScreenshot(
+          _screenshotFiles[i],
+        );
         final id = result['influencer_id'] ?? result['id'];
-        if (id == null) { setState(() => _uploadingScreenshot = false); return; }
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => InfluencerReportScreen(influencerId: id is int ? id : int.parse(id.toString())),
-          ),
-        );
-        _loadRecentAnalyses();
+        final ocr = result['ocr_data'] as Map<String, dynamic>? ?? {};
+        results.add({
+          'id': id,
+          'username': result['username'] ?? ocr['username'] ?? '',
+          'followers_count': result['followers_count'] ?? ocr['followers'] ?? 0,
+          'engagement_rate': result['engagement_rate'] ?? 0,
+          'overall_score': result['overall_score'],
+          'filename': _screenshotFiles[i].path.split('/').last,
+        });
+      } catch (e) {
+        results.add({
+          'error': e.toString().replaceFirst('Exception: ', '').replaceFirst(RegExp(r'^ApiException\(\d+\): '), ''),
+          'filename': _screenshotFiles[i].path.split('/').last,
+        });
       }
-    } catch (e) {
+
+      // Update partial results in real-time
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              e.toString().replaceFirst('Exception: ', '').replaceFirst(RegExp(r'^ApiException\(\d+\): '), ''),
-              style: GoogleFonts.inter(color: Colors.white),
-            ),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+        setState(() => _screenshotResults = List.from(results));
       }
-    } finally {
-      if (mounted) setState(() => _uploadingScreenshot = false);
+    }
+
+    if (mounted) {
+      setState(() {
+        _uploadingScreenshot = false;
+        _screenshotProgress = '';
+        _screenshotResults = results;
+      });
+      _loadRecentAnalyses();
     }
   }
 
@@ -353,39 +385,76 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       children: [
         // Upload area
         GestureDetector(
-          onTap: _pickScreenshot,
+          onTap: _pickScreenshots,
           child: Container(
-            height: 220,
+            height: _screenshotFiles.isEmpty ? 220 : null,
+            constraints: _screenshotFiles.isNotEmpty ? const BoxConstraints(minHeight: 120) : null,
             decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: _screenshotFile != null ? AppColors.primary : AppColors.border,
-                width: _screenshotFile != null ? 1.5 : 1,
+                color: _screenshotFiles.isNotEmpty ? AppColors.primary : AppColors.border,
+                width: _screenshotFiles.isNotEmpty ? 1.5 : 1,
               ),
             ),
-            child: _screenshotFile != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(15),
-                    child: Stack(
-                      fit: StackFit.expand,
+            child: _screenshotFiles.isNotEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
                       children: [
-                        Image.file(_screenshotFile!, fit: BoxFit.cover),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: GestureDetector(
-                            onTap: () => setState(() => _screenshotFile = null),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: Colors.black54,
-                                shape: BoxShape.circle,
+                        // Thumbnails grid
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ..._screenshotFiles.asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final file = entry.value;
+                              return Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.file(file, width: 90, height: 90, fit: BoxFit.cover),
+                                  ),
+                                  Positioned(
+                                    top: 2, right: 2,
+                                    child: GestureDetector(
+                                      onTap: () => setState(() {
+                                        _screenshotFiles.removeAt(idx);
+                                        _screenshotResults = [];
+                                      }),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.black54,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }),
+                            // Add more button
+                            GestureDetector(
+                              onTap: _pickScreenshots,
+                              child: Container(
+                                width: 90, height: 90,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                                ),
+                                child: const Icon(Icons.add_rounded, size: 28, color: AppColors.primary),
                               ),
-                              child: const Icon(Icons.close_rounded,
-                                  size: 18, color: Colors.white),
                             ),
-                          ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_screenshotFiles.length} capture${_screenshotFiles.length > 1 ? 's' : ''} selectionnee${_screenshotFiles.length > 1 ? 's' : ''}',
+                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                         ),
                       ],
                     ),
@@ -407,7 +476,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Appuyez pour choisir une capture',
+                        'Appuyez pour choisir des captures',
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -416,7 +485,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Capture d\'ecran du profil Instagram ou TikTok',
+                        'Une ou plusieurs captures de profils IG/TikTok',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: AppColors.textSecondary,
@@ -428,12 +497,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         ),
         const SizedBox(height: 16),
 
-        // Analyze screenshot button
+        // Analyze button
         SizedBox(
           height: 56,
           child: ElevatedButton(
-            onPressed: _screenshotFile != null && !_uploadingScreenshot
-                ? _analyzeScreenshot
+            onPressed: _screenshotFiles.isNotEmpty && !_uploadingScreenshot
+                ? _analyzeScreenshots
                 : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -443,16 +512,24 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               ),
             ),
             child: _uploadingScreenshot
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 24, height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        _screenshotProgress.isNotEmpty ? _screenshotProgress : 'Analyse en cours...',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                      ),
+                    ],
                   )
                 : Text(
-                    'Analyser la capture',
+                    _screenshotFiles.length > 1
+                        ? 'Analyser ${_screenshotFiles.length} captures'
+                        : 'Analyser la capture',
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -461,6 +538,98 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   ),
           ),
         ),
+
+        // Results from multi-screenshot
+        if (_screenshotResults.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text('RESULTATS', style: AppTextStyles.sectionLabel),
+          const SizedBox(height: 8),
+          ..._screenshotResults.map((r) {
+            final hasError = r['error'] != null;
+            return GestureDetector(
+              onTap: hasError ? null : () {
+                final id = r['id'];
+                if (id != null) {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => InfluencerReportScreen(
+                      influencerId: id is int ? id : int.parse(id.toString()),
+                    ),
+                  ));
+                }
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: hasError ? AppColors.danger.withValues(alpha: 0.3) : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: hasError
+                          ? AppColors.danger.withValues(alpha: 0.15)
+                          : AppColors.primary.withValues(alpha: 0.15),
+                      child: Icon(
+                        hasError ? Icons.error_outline : Icons.check_circle_outline,
+                        size: 20,
+                        color: hasError ? AppColors.danger : AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            hasError
+                                ? (r['filename'] ?? 'Erreur')
+                                : '@${r['username'] ?? ''}',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          if (hasError)
+                            Text(
+                              r['error'].toString(),
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.danger),
+                            )
+                          else
+                            Text(
+                              '${_formatNum(r['followers_count'] ?? 0)} abonnes  •  ER: ${(r['engagement_rate'] ?? 0).toStringAsFixed(1)}%',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (!hasError && r['overall_score'] != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.scoreColor((r['overall_score'] as num).toDouble()).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          (r['overall_score'] as num).toStringAsFixed(1),
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.scoreColor((r['overall_score'] as num).toDouble()),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
